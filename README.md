@@ -1,61 +1,69 @@
-# B 站 UP 评论监控 -> QQ 官方机器人
+# bili-qq-monitor
 
-这是一个常驻 Python 服务，做两件事：
+一个面向 B 站评论区的实时轮询监控服务。
 
-1. 通过 B 站公开评论接口轮询指定视频的评论区。
-2. 识别 `member.mid == owner.mid` 的评论，也就是 UP 主本人发的评论。
-3. 额外识别你指定的 B 站用户 `mid/uid` 或昵称发的评论。
-4. 命中后尝试通过 QQ 官方机器人发群提醒或私聊提醒。
+它会持续扫描你指定视频的评论区，识别两类评论者：
 
-顶层评论扫描当前使用“最新评论”排序，以优先保证新评论能尽快被发现。
+1. 视频 `UP 主本人`
+2. 你额外指定的评论用户
 
-## 先看限制
+命中后，服务会通过 QQ 官方机器人把提醒推送到群聊或私聊。
 
-按 QQ 官方文档 `发送消息` 页面 2026-03-05 的说明，`主动推送能力于 2025-04-21 起不再提供，接口调用时会收到错误信息`。  
-因此这套程序会把官方鉴权、网关事件接入、群消息发送都实现完整，但你这个核心动作:
+## 能力概览
 
-- `B站轮询发现新评论 -> 机器人主动往 QQ 群发消息`
+- 监控指定 `BV` 视频的评论区
+- 监听 `UP 主评论`
+- 监听指定用户评论
+  当前支持按昵称精确匹配，也支持按 UID 兜底
+- 支持群聊和私聊两种机器人配置入口
+- 支持私聊 QQ 主动提醒
+- 支持连续失败告警
+  单个 `BV` 连续失败达到阈值后，自动私聊提醒
+- 支持运行时命令
+  不需要改代码就可以新增、移除或清空监控
 
-在当前官方策略下可能直接被平台拒绝。  
-如果日志里出现相关错误，问题不在代码，而在平台能力本身。
+## 当前实现
 
-## 方案结构
+- QQ 侧：`AccessToken + OpenAPI + Gateway WebSocket`
+- B 站侧：公开评论接口轮询
+- 存储：本地 `state.json`
 
-- QQ 侧：用官方 `AccessToken + OpenAPI + Gateway WebSocket`
-- B 站侧：轮询评论接口
-- 状态持久化：本地 `state.json`
+顶层评论当前按“最新评论”排序扫描，优先发现新评论。
 
-程序会自动处理这些事情：
+## 已知限制
 
-- 维护 QQ `access_token`
-- 连接 QQ `gateway` 并保持心跳
-- 接收群相关事件
-- 接收私聊相关事件
-- 记录 `group_openid`
-- 记录用户 `openid`
-- 支持在群里 `@机器人 /watch BV号` 动态添加监控
-- 支持私聊机器人发送 `/watch BV号` 动态添加监控
-- 支持 `/clearwatch` 清空所有监控视频
-- 支持在群里或私聊里发送 `/watchuser 昵称` 添加“指定评论用户”
-- 支持在群里或私聊里发送 `/unwatchuser 昵称` 移除“指定评论用户”
-- 仍支持 `/watchuid UID` 和 `/unwatchuid UID` 作为兜底
-- 支持 `@机器人 /status` 查看状态
-- 支持 `/h` 或 `/help` 查看全部命令和用法
-- 支持私聊发送 `/status` 查看状态
-- 发现 UP 评论后，尝试调用 `/v2/groups/{group_openid}/messages`
-- 发现 UP 评论后，尝试调用 `/v2/users/{openid}/messages`
-- 单个 BV 轮询连续失败达到阈值后，自动私聊发送异常提醒
+### 1. QQ 主动推送策略受官方限制
 
-默认推送内容里只带 `BV号`，不直接发 URL。  
-这是为了避开官方文档里“消息内容包含 URL 需要先在后台配置消息 URL”的限制。
+按 QQ 官方文档 2026-03-05 的说明，主动推送能力可能被限制或拒绝。  
+也就是说，服务端逻辑可以正常命中评论，但 QQ 平台不一定保证每种场景都允许主动发消息。
 
-## 运行要求
+### 2. 这不是 B 站官方事件订阅
+
+本项目本质上是“近实时轮询”，不是 webhook。  
+轮询频率越高，实时性越好，但越容易触发 B 站风控。
+
+### 3. 昵称监听不是强标识
+
+昵称匹配采用“精确匹配”。
+
+- 好处：简单，误报少
+- 风险：昵称可能重名，也可能改名
+
+如果你需要更稳，优先用 UID：
+
+```text
+/watchuid 279321940
+```
+
+## 环境要求
 
 - Python 3.11+
-- 一个已创建好的 QQ 官方机器人
-- 机器人已开通你需要的群能力
+- 已创建好的 QQ 官方机器人
+- 机器人具备对应的群聊或私聊能力
 
-## 安装
+## 快速开始
+
+### 1. 安装依赖
 
 ```bash
 cd /root/bili_qq_monitor_official
@@ -65,15 +73,25 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-然后编辑 `.env`：
+### 2. 配置 `.env`
+
+至少填写：
 
 ```env
 QQ_APPID=你的APPID
 QQ_APP_SECRET=你的机器人密钥
-BILI_BVIDS=BV1xx411c7mD
 ```
 
-## 启动
+常用可选项：
+
+```env
+BILI_BVIDS=BV16jcyzVEUs
+BILI_WATCH_USER_NAMES=萧风明洛
+BILI_POLL_INTERVAL=10
+BILI_FAILURE_NOTIFY_THRESHOLD=3
+```
+
+### 3. 启动服务
 
 ```bash
 cd /root/bili_qq_monitor_official
@@ -81,167 +99,164 @@ source .venv/bin/activate
 python main.py
 ```
 
-## 使用方式
+## 命令说明
 
-### 方式 1：在群里动态配置
+机器人支持在群里 `@机器人` 或直接私聊使用命令。
 
-把机器人拉进群后，群里 `@机器人` 发送：
-
-```text
-/watch BV1xx411c7mD
-```
-
-查看状态：
+### 视频监控
 
 ```text
-/status
+/watch BV号
 ```
 
-查看帮助：
+添加一个监控视频。
 
 ```text
-/h
+/unwatch BV号
 ```
 
-移除监控：
-
-```text
-/unwatch BV1xx411c7mD
-```
-
-清空所有监控视频：
+移除一个监控视频。
 
 ```text
 /clearwatch
 ```
 
-### 方式 2：私聊机器人动态配置
+清空所有监控视频。
 
-直接给机器人私聊发送：
-
-```text
-/watch BV1xx411c7mD
-```
-
-添加指定评论用户：
+### 评论用户监控
 
 ```text
-/watchuser 某个昵称
+/watchuser 昵称
 ```
 
-查看状态：
+按昵称精确匹配监听评论用户。
+
+```text
+/unwatchuser 昵称
+```
+
+移除昵称监听。
+
+```text
+/watchuid UID
+```
+
+按 UID 监听评论用户。
+
+```text
+/unwatchuid UID
+```
+
+移除 UID 监听。
+
+### 状态与帮助
 
 ```text
 /status
 ```
 
-查看帮助：
+查看当前监控状态。
 
 ```text
 /h
+/help
 ```
 
-移除监控：
+查看完整命令帮助。
 
-```text
-/unwatch BV1xx411c7mD
-```
+## 环境变量
 
-清空所有监控视频：
-
-```text
-/clearwatch
-```
-
-移除指定评论用户：
-
-```text
-/unwatchuser 某个昵称
-```
-
-如果昵称重名、改名，或者你想更稳一点，也可以继续用 UID：
-
-```text
-/watchuid 279321940
-/unwatchuid 279321940
-```
-
-### 方式 3：环境变量预置
-
-如果你已经知道目标群的 `group_openid`，可以在 `.env` 写：
+常用环境变量如下：
 
 ```env
-TARGET_GROUP_OPENIDS=群openid1,群openid2
-```
+QQ_APPID=
+QQ_APP_SECRET=
 
-如果你已经知道目标用户的 `openid`，也可以在 `.env` 写：
+TARGET_GROUP_OPENIDS=
+TARGET_USER_OPENIDS=
 
-```env
-TARGET_USER_OPENIDS=用户openid1,用户openid2
-```
+BILI_BVIDS=
+BILI_WATCH_USER_MIDS=
+BILI_WATCH_USER_NAMES=
+BILI_SESSDATA=
 
-如果你想开机就监听某些 B 站用户的评论，也可以在 `.env` 写：
-
-```env
-BILI_WATCH_USER_MIDS=279321940,343464917
-BILI_WATCH_USER_NAMES=某个昵称,另一个昵称
+BILI_POLL_INTERVAL=10
+BILI_MAX_PAGES=10
 BILI_FAILURE_NOTIFY_THRESHOLD=3
+
+STATE_PATH=./state.json
 ```
+
+说明：
+
+- `TARGET_GROUP_OPENIDS`
+  预置群目标
+- `TARGET_USER_OPENIDS`
+  预置私聊目标
+- `BILI_BVIDS`
+  启动时预置监控视频
+- `BILI_WATCH_USER_MIDS`
+  启动时预置评论用户 UID
+- `BILI_WATCH_USER_NAMES`
+  启动时预置评论用户昵称
+- `BILI_SESSDATA`
+  可选的 B 站登录态。高频扫描或子评论抓取时建议提供
+- `BILI_POLL_INTERVAL`
+  轮询间隔，单位秒
+- `BILI_MAX_PAGES`
+  每轮扫描顶层评论的最大页数
+- `BILI_FAILURE_NOTIFY_THRESHOLD`
+  单个 `BV` 连续失败多少次后发一条私聊告警
 
 ## 状态文件
 
-默认会在当前目录生成 `state.json`，保存：
+默认状态文件是：
 
-- 已记录的 `group_openid`
-- 已记录的用户 `openid`
-- 当前监控的视频列表
-- 当前监听的 B 站评论用户 `mid`
-- 当前监听的 B 站评论用户昵称
+```text
+./state.json
+```
+
+它会记录：
+
+- 已登记的群 `openid`
+- 已登记的私聊用户 `openid`
+- 当前监控视频列表
+- 当前监听的评论 UID
+- 当前监听的评论昵称
 - 已推送过的评论 `rpid`
 - 已处理过的 QQ 事件 ID
 
-## 昵称匹配说明
-
-昵称监听采用“精确匹配”。
-
-- 优点：实现简单，误报更少
-- 缺点：B 站昵称不是唯一标识，且用户可以改名
-
-如果你遇到以下情况，建议改用 UID：
-
-- 同名用户很多
-- 用户频繁改昵称
-- 你要求误报尽量低
-
 ## 常见问题
 
-### 1. 为什么已经检测到 UP 评论，但 QQ 群里没有提醒？
+### 为什么评论已经发了，但没有触发提醒？
 
-最常见原因有两个：
+常见原因有这些：
 
-- 当前没有有效的 `group_openid`
-- QQ 官方已拒绝主动推送
+- 该评论还没有被 B 站公开接口返回
+- 评论在旧楼层子回复里，且该楼层接口短时触发了风控
+- 昵称不完全一致
+- QQ 主动推送被平台限制
 
-先看日志里有没有类似错误响应。
+优先排查 `service.log`。
 
-### 2. 为什么不用 Webhook？
+### 为什么建议配置 `SESSDATA`？
 
-官方文档里很多群事件当前仍标成 `WebSocket` 推送，这个实现直接按网关模式接入，少一层 HTTPS 回调配置。
+高频扫描和子评论抓取更容易触发 `412` 或 `-352`。  
+提供登录态后，接口稳定性通常会更好。
 
-### 3. B 站会不会漏？
+### 连续失败提醒会不会刷屏？
 
-这套方案是近实时轮询，不是 B 站官方事件订阅。  
-对评论很多的视频，建议把 `BILI_MAX_PAGES` 提高一些，代价是请求更多。
+不会。
 
-### 4. 查询接口连续失败会怎么样？
+- 单个 `BV` 达到阈值时只提醒一次
+- 后续恢复成功会自动清零
+- 恢复前不会重复发送同类告警
 
-程序会按单个 `BV` 统计连续失败次数。
+## 安全建议
 
-- 默认连续失败 `3` 次后，给已登记的私聊 QQ 目标发一条异常提醒
-- 恢复成功后，失败计数自动清零
-- 恢复前不会重复刷屏
+- 不要把 `.env`、`SESSDATA`、运行日志和 `state.json` 提交到公开仓库
+- 如果你曾在聊天、工单或截图里暴露过 QQ 机器人密钥或 B 站登录态，建议尽快轮换
 
-## 你现在最该做的事
+## 开源协议
 
-你在聊天里已经贴出了机器人密钥。这个密钥现在应该视为已泄露。  
-建议先去 QQ 开放平台把机器人密钥轮换掉，然后再把新密钥写入 `.env`。
+本项目使用 [MIT License](./LICENSE)。
