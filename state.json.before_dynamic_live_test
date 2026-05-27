@@ -1,0 +1,35 @@
+{
+  "targets": {},
+  "user_targets": {
+    "B6144B119B0952AFFA1C035407A93A1A": {
+      "enabled": true,
+      "source": "event",
+      "last_event": "C2C_MESSAGE_CREATE",
+      "updated_at": "2026-03-16 10:29:49"
+    }
+  },
+  "subscriptions": [
+    "BV16jcyzVEUs"
+  ],
+  "commenter_mids": [],
+  "commenter_names": [
+    "萧风明洛"
+  ],
+  "seen_rpids": {},
+  "handled_dispatch_ids": [
+    "C2C_MESSAGE_CREATE:amlepqs9l8zyfx1gqt1yvc6c9xb4tyjevp0rej5ld8dfuohchhcigml0xmisoz2",
+    "C2C_MESSAGE_CREATE:szvrljlaml78hbwdv7l6ymoobqd1od1ug1vwwkk1hntfuohchhcigml0xmisoz2",
+    "C2C_MESSAGE_CREATE:xusbpsrmyohxqdpecqkgd4rcqvpgm0cet8ryoh1dfuohchhcigml0xmisoz2",
+    "C2C_MESSAGE_CREATE:9hvx7siazheq5ieilq6enjyqjki1pw2sja5qo8lfnpfuohchhcigml0xmisoz2",
+    "C2C_MESSAGE_CREATE:kpucpsavqanc6mpqdumvz3nw9mjpcs5ptjizox8imuzfuohchhcigml0xmisoz2",
+    "C2C_MESSAGE_CREATE:lzcs0bxu4lfa8ycckk8st9v3flyyofbw6bxumkppffuohchhcigml0xmisoz2",
+    "C2C_MESSAGE_CREATE:1blftpc5vqylm8pmyj6axudx2ds3scsmficcavtrsfuohchhcigml0xmisoz2",
+    "C2C_MESSAGE_CREATE:9hvx7siazheq5ieilq6enkeaqp8cs31qegzncqujmm3fuohchhcigml0xmisoz2",
+    "C2C_MESSAGE_CREATE:7ilyulfrp46ybhzhzaeaixw4k1pijiy4dgcfpgbfuohchhcigml0xmisoz2",
+    "C2C_MESSAGE_CREATE:lhgszbjeisw0zbxdv4duatn6mrjncetsmiorfciwnejfuohchhcigml0xmisoz2",
+    "C2C_MESSAGE_CREATE:9azur36ixwueuww8fycl8q1gcbhq2wmlzdvxwya1zrfuohchhcigml0xmisoz2",
+    "C2C_MESSAGE_CREATE:lhgszbjeisw0zbxdv4duaplmscj8xqvbyhvilcdtratfuohchhcigml0xmisoz2",
+    "C2C_MESSAGE_CREATE:jtv6a0ijo5pnwnbrc66auzhnmtco8kwgr4lk9gzfuohchhcigml0xmisoz2",
+    "C2C_MESSAGE_CREATE:sutmgqguq8xmyh20po9yja19qabxtwvnyygiqhonst9aj4efkw9mumbbbskblks"
+  ]
+}

@@ -1,8 +1,10 @@
 # bili-qq-monitor
 
-一个面向 B 站评论区的实时轮询监控服务。
+一个面向 B 站评论区与 UP 主动态的实时轮询监控服务。
 
-它会持续扫描你指定视频的评论区，识别两类评论者：
+它会持续扫描你指定视频的评论区，并可额外轮询指定 UP 主的动态。
+
+评论区场景会识别两类评论者：
 
 1. 视频 `UP 主本人`
 2. 你额外指定的评论用户
@@ -15,6 +17,12 @@
 - 监听 `UP 主评论`
 - 监听指定用户评论
   当前支持按昵称精确匹配，也支持按 UID 兜底
+- 监听指定 `UP 主新动态`
+  运行时命令支持按昵称精确匹配或按 UID 监控，内部仍按 UID 存储；首次建档不回放历史动态
+- 监听指定 `单条图文动态ID` 的评论
+  类似视频评论监听，按单条动态精确订阅评论区
+- 自动监听已监控 UP 最近图文动态的评论
+  仍沿用现有评论规则，只提醒 `UP 主本人` 和你额外指定的评论用户
 - 支持群聊和私聊两种机器人配置入口
 - 支持私聊 QQ 主动提醒
 - 支持连续失败告警
@@ -25,7 +33,7 @@
 ## 当前实现
 
 - QQ 侧：`AccessToken + OpenAPI + Gateway WebSocket`
-- B 站侧：公开评论接口轮询
+- B 站侧：公开评论接口 + 动态接口轮询
 - 存储：本地 `state.json`
 
 顶层评论当前按“最新评论”排序扫描，优先发现新评论。
@@ -42,6 +50,8 @@
 本项目本质上是“近实时轮询”，不是 webhook。  
 轮询频率越高，实时性越好，但越容易触发 B 站风控。
 
+动态接口通常比视频信息和评论接口更容易受到登录态与风控影响。
+
 ### 3. 昵称监听不是强标识
 
 昵称匹配采用“精确匹配”。
@@ -54,6 +64,55 @@
 ```text
 /watchuid 279321940
 ```
+
+### 4. 动态监控内部仍按 UID 管理
+
+当前实现支持在运行时用 UID 或昵称添加动态监听：
+
+```text
+/watchdyn 279321940
+/watchdyn 某个UP昵称
+```
+
+昵称解析采用“精确匹配”。
+如果出现重名，命令会拒绝添加并要求改用 UID，避免误监控。
+
+首次加入监听时，会先把当前可见动态记为“已见”，之后只提醒新增动态，不回放历史内容。
+
+已开启动态监控的 UID，还会自动监听其最近可见图文动态的评论。
+这部分仍沿用现有评论规则，只识别：
+
+1. 动态作者本人
+2. 你通过 `/watchuser` 或 `/watchuid` 指定的评论用户
+
+首次纳入监听的图文动态只会先建评论去重档，不会回放旧评论。
+
+### 5. 单条图文动态评论监听按动态ID管理
+
+如果你需要像视频评论监听那样，精确盯住某一条图文动态的评论，可以直接使用动态 ID：
+
+```text
+/watchdyncomment 1184285425981718532
+```
+
+也支持别名：
+
+```text
+/watchdynreply 1184285425981718532
+```
+
+这条能力和 `/watchdyn UID或昵称` 不冲突：
+
+- `/watchdyn`
+  面向某个 UP 的动态流
+- `/watchdyncomment`
+  面向某一条固定动态
+
+它的行为更接近 `/watch BV号`：
+
+- 订阅对象是单条固定内容
+- 不依赖该动态是否仍在“最近动态列表”里
+- 首次加入后不会先建历史评论档，当前可见的命中评论会直接进入提醒链路
 
 ## 环境要求
 
@@ -87,6 +146,7 @@ QQ_APP_SECRET=你的机器人密钥
 ```env
 BILI_BVIDS=BV16jcyzVEUs
 BILI_WATCH_USER_NAMES=萧风明洛
+BILI_WATCH_DYNAMIC_UIDS=279321940
 BILI_POLL_INTERVAL=10
 BILI_FAILURE_NOTIFY_THRESHOLD=3
 ```
@@ -149,6 +209,36 @@ python main.py
 
 移除 UID 监听。
 
+### 动态监控
+
+```text
+/watchdyn UID或昵称
+```
+
+按 UID 或昵称监听该 UP 主的新动态，并自动监听其最近图文动态的评论。
+
+```text
+/unwatchdyn UID或昵称
+```
+
+移除该 UP 主的动态监听。
+
+### 单条图文动态评论监控
+
+```text
+/watchdyncomment 动态ID
+/watchdynreply 动态ID
+```
+
+监听这条图文/文字动态的评论区。
+
+```text
+/unwatchdyncomment 动态ID
+/unwatchdynreply 动态ID
+```
+
+移除这条图文动态的评论监听。
+
 ### 状态与帮助
 
 ```text
@@ -178,10 +268,13 @@ TARGET_USER_OPENIDS=
 BILI_BVIDS=
 BILI_WATCH_USER_MIDS=
 BILI_WATCH_USER_NAMES=
+BILI_WATCH_DYNAMIC_UIDS=
+BILI_WATCH_DYNAMIC_COMMENT_IDS=
 BILI_SESSDATA=
 
 BILI_POLL_INTERVAL=10
 BILI_MAX_PAGES=10
+BILI_DYNAMIC_MAX_PAGES=2
 BILI_FAILURE_NOTIFY_THRESHOLD=3
 
 STATE_PATH=./state.json
@@ -199,12 +292,18 @@ STATE_PATH=./state.json
   启动时预置评论用户 UID
 - `BILI_WATCH_USER_NAMES`
   启动时预置评论用户昵称
+- `BILI_WATCH_DYNAMIC_UIDS`
+  启动时预置动态监控 UID
+- `BILI_WATCH_DYNAMIC_COMMENT_IDS`
+  启动时预置要精确监听评论的图文动态 ID
 - `BILI_SESSDATA`
-  可选的 B 站登录态。高频扫描或子评论抓取时建议提供
+  可选的 B 站登录态。高频扫描、子评论抓取、动态抓取时建议提供；动态接口通常依赖它
 - `BILI_POLL_INTERVAL`
   轮询间隔，单位秒
 - `BILI_MAX_PAGES`
   每轮扫描顶层评论的最大页数
+- `BILI_DYNAMIC_MAX_PAGES`
+  每轮扫描动态的最大页数
 - `BILI_FAILURE_NOTIFY_THRESHOLD`
   单个 `BV` 连续失败多少次后发一条私聊告警
 
@@ -223,7 +322,11 @@ STATE_PATH=./state.json
 - 当前监控视频列表
 - 当前监听的评论 UID
 - 当前监听的评论昵称
+- 当前监听的动态 UID
+- 当前精确监听的图文动态 ID
 - 已推送过的评论 `rpid`
+- 已记录的动态 `id_str`
+- 已记录的图文动态评论 `rpid`
 - 已处理过的 QQ 事件 ID
 
 ## 常见问题
@@ -235,13 +338,18 @@ STATE_PATH=./state.json
 - 该评论还没有被 B 站公开接口返回
 - 评论在旧楼层子回复里，且该楼层接口短时触发了风控
 - 昵称不完全一致
+- 动态接口或评论接口被 B 站风控拦截
+- 动态监听首次加入时只建档，不回放旧动态
+- 图文动态评论监听首次建档时，只会记住当前已见评论，不回放旧评论
+- 目标图文动态已经超出当前动态抓取页范围
+- 指定动态 ID 不是图文/文字动态，或页面已不可见
 - QQ 主动推送被平台限制
 
 优先排查 `service.log`。
 
 ### 为什么建议配置 `SESSDATA`？
 
-高频扫描和子评论抓取更容易触发 `412` 或 `-352`。  
+高频扫描、子评论抓取和动态抓取更容易触发 `412` 或 `-352`。  
 提供登录态后，接口稳定性通常会更好。
 
 ### 连续失败提醒会不会刷屏？
